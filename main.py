@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
-# 페이지 기본 설정은 반드시 가장 먼저 호출되어야 합니다.
+# 페이지 기본 설정
 st.set_page_config(page_title="KOBIS 박스오피스 대시보드", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
 API_URL = "https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json"
@@ -71,13 +71,13 @@ def fetch_regions(api_key):
     codes = data.get("codes", [])
     if not codes:
         raise KobisError("🗺️ KOBIS에서 지역 코드 목록을 가져오지 못했습니다.")
-    return {row["comCodeNm"]: row["fullCd"] for row in codes}
+    # 오류 수정: KOBIS API 실제 반환 키인 'korNm'을 사용하도록 변경
+    return {row["korNm"]: row["fullCd"] for row in codes}
 
 def show_table(df):
     view = df[list(DISPLAY_COLUMNS)].rename(columns=DISPLAY_COLUMNS)
     view["진입 구분"] = view["진입 구분"].replace({"NEW": "🆕 신규", "OLD": "➖ 기존"})
     
-    # [수정됨] Streamlit 버전에 구애받지 않는 안전한 Pandas 포맷팅 방식 적용
     for col in ["일일 관객(명)", "누적 관객(명)", "스크린(개)", "일일 매출(원)"]:
         view[col] = view[col].apply(lambda x: f"{int(x):,}")
         

@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from streamlit.errors import StreamlitSecretNotFoundError
 
-# 페이지 기본 설정 (넓은 화면, 레이아웃 최적화)
+# 페이지 기본 설정은 반드시 가장 먼저 호출되어야 합니다.
 st.set_page_config(page_title="KOBIS 박스오피스 대시보드", page_icon="🎬", layout="wide", initial_sidebar_state="expanded")
 
 API_URL = "https://www.kobis.or.kr/kobisopenapi/webservice/rest/boxoffice/searchDailyBoxOfficeList.json"
@@ -75,22 +75,13 @@ def fetch_regions(api_key):
 
 def show_table(df):
     view = df[list(DISPLAY_COLUMNS)].rename(columns=DISPLAY_COLUMNS)
-    # 텍스트 라벨을 시각적인 아이콘으로 변경
     view["진입 구분"] = view["진입 구분"].replace({"NEW": "🆕 신규", "OLD": "➖ 기존"})
     
-    # Streamlit 최신 기능인 column_config를 활용해 숫자 포맷팅 (콤마 및 단위 추가)
-    st.dataframe(
-        view,
-        hide_index=True,
-        use_container_width=True,
-        column_config={
-            "일일 관객(명)": st.column_config.NumberColumn(format="%d 명"),
-            "누적 관객(명)": st.column_config.NumberColumn(format="%d 명"),
-            "일일 매출(원)": st.column_config.NumberColumn(format="₩ %d"),
-            "스크린(개)": st.column_config.NumberColumn(format="%d 개"),
-            "KOBIS 순위": st.column_config.NumberColumn(format="%d 위"),
-        }
-    )
+    # [수정됨] Streamlit 버전에 구애받지 않는 안전한 Pandas 포맷팅 방식 적용
+    for col in ["일일 관객(명)", "누적 관객(명)", "스크린(개)", "일일 매출(원)"]:
+        view[col] = view[col].apply(lambda x: f"{int(x):,}")
+        
+    st.dataframe(view, hide_index=True, use_container_width=True)
 
 def show_ranking(df):
     st.markdown("### 🏆 오늘의 전국 박스오피스 TOP 10")
@@ -100,14 +91,10 @@ def show_ranking(df):
     share = top.iloc[0]["audiCnt"] / total * 100 if total else 0
     new_count = int(top["rankOldAndNew"].eq("NEW").sum())
     
-    # 주요 지표 (Metrics)를 카드 형태로 세련되게 배치
     col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric(label="👥 전체 TOP 10 관객 합계", value=f"{total:,} 명")
-    with col2:
-        st.metric(label="👑 1위 영화 관객 점유율", value=f"{share:.1f} %")
-    with col3:
-        st.metric(label="✨ 신규 진입 영화", value=f"{new_count} 편")
+    col1.metric(label="👥 전체 TOP 10 관객 합계", value=f"{total:,} 명")
+    col2.metric(label="👑 1위 영화 관객 점유율", value=f"{share:.1f} %")
+    col3.metric(label="✨ 신규 진입 영화", value=f"{new_count} 편")
     
     st.caption("※ 점유율은 표에 표시된 TOP 10 영화의 일일 관객 합계를 기준으로 계산되었습니다.")
     st.divider()
@@ -156,7 +143,6 @@ def show_history(day, df, api_key):
         x="날짜", 
         y="일일 관객(명)", 
         markers=True,
-        template="plotly_white", # 깔끔한 흰색 배경 테마 적용
     )
     chart.update_traces(connectgaps=False, line=dict(width=3, color='#FF4B4B'), marker=dict(size=8))
     chart.update_layout(xaxis_title="", yaxis_title="관객 수 (명)", hovermode="x unified")
@@ -214,7 +200,6 @@ def show_movies(df):
     fig.update_layout(
         polar=dict(radialaxis=dict(visible=True, range=[0, 100])),
         showlegend=True,
-        template="plotly_white",
         margin=dict(t=40, b=40, l=40, r=40)
     )
     
@@ -257,7 +242,6 @@ def show_regions(day, api_key):
             winner = df.iloc[0]
             share = winner["audiCnt"] / total * 100 if total else 0
             
-            # 메트릭스 시각화
             m1, m2 = st.columns(2)
             m1.metric("총 관객수", f"{total:,} 명")
             m2.metric("1위 점유율", f"{share:.1f} %")
@@ -273,7 +257,6 @@ def show_regions(day, api_key):
 # 사이드바 (Sidebar) - 대시보드 컨트롤 패널
 # ==========================================
 with st.sidebar:
-    st.image("https://www.kobis.or.kr/kobis/web/images/prj/logo.png", width=150) # KOBIS 공식 로고 활용 가능
     st.title("메뉴 및 설정")
     day = st.date_input("📅 분석 날짜 선택", YESTERDAY, max_value=YESTERDAY)
     
@@ -303,7 +286,6 @@ try:
     if nationwide.empty:
         st.warning(f"🚫 {day.strftime('%Y년 %m월 %d일')}의 박스오피스 데이터가 존재하지 않습니다. 이전 날짜로 조회해 보세요.")
     else:
-        # 모던한 탭 구조로 메뉴 분리
         tab1, tab2, tab3, tab4 = st.tabs(["🏆 전국 TOP 10", "📈 7일 관객 추이", "⚔️ 영화 비교", "🗺️ 지역 비교"])
         
         with tab1:

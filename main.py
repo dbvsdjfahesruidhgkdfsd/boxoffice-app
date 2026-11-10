@@ -71,8 +71,26 @@ def fetch_regions(api_key):
     codes = data.get("codes", [])
     if not codes:
         raise KobisError("🗺️ KOBIS에서 지역 코드 목록을 가져오지 못했습니다.")
-    # 오류 수정: KOBIS API 실제 반환 키인 'korNm'을 사용하도록 변경
     return {row["korNm"]: row["fullCd"] for row in codes}
+
+@st.cache_data(ttl=86400)
+def fetch_poster(movie_name, tmdb_key=""):
+    """TMDB API를 사용하여 영화 포스터 이미지를 가져옵니다."""
+    if not tmdb_key:
+        return "https://via.placeholder.com/300x450/4B8BF4/FFFFFF?text=No+API+Key"
+    
+    url = f"https://api.themoviedb.org/3/search/movie?api_key={tmdb_key}&query={movie_name}&language=ko-KR"
+    try:
+        res = requests.get(url, timeout=5).json()
+        if res.get("results"):
+            poster_path = res["results"][0].get("poster_path")
+            if poster_path:
+                return f"https://image.tmdb.org/t/p/w500{poster_path}"
+    except Exception:
+        pass
+    
+    # 포스터를 찾지 못한 경우 기본 이미지
+    return "https://via.placeholder.com/300x450/eeeeee/999999?text=No+Poster"
 
 def show_table(df):
     view = df[list(DISPLAY_COLUMNS)].rename(columns=DISPLAY_COLUMNS)
@@ -83,7 +101,7 @@ def show_table(df):
         
     st.dataframe(view, hide_index=True, use_container_width=True)
 
-def show_ranking(df):
+def show_ranking(df, tmdb_key=""):
     st.markdown("### 🏆 오늘의 전국 박스오피스 TOP 10")
     
     top = df.head(10)
@@ -91,14 +109,36 @@ def show_ranking(df):
     share = top.iloc[0]["audiCnt"] / total * 100 if total else 0
     new_count = int(top["rankOldAndNew"].eq("NEW").sum())
     
+    # 핵심 지표 (Metrics)
     col1, col2, col3 = st.columns(3)
     col1.metric(label="👥 전체 TOP 10 관객 합계", value=f"{total:,} 명")
     col2.metric(label="👑 1위 영화 관객 점유율", value=f"{share:.1f} %")
     col3.metric(label="✨ 신규 진입 영화", value=f"{new_count} 편")
     
-    st.caption("※ 점유율은 표에 표시된 TOP 10 영화의 일일 관객 합계를 기준으로 계산되었습니다.")
     st.divider()
 
+    # 포스터 갤러리 섹션 추가 (5열 2행)
+    st.markdown("#### 🍿 현재 상영작 포스터 갤러리")
+    if not tmdb_key or tmdb_key == "발급받은_TMDB_API_키":
+        st.info("💡 `secrets.toml`에 `TMDB_KEY`를 추가하면 실제 영화 포스터가 표시됩니다. (무료 발급: https://www.themoviedb.org/)")
+    
+    # 5개의 컬럼 생성 (1~5위, 6~10위를 나눠서 배치)
+    for idx in range(0, 10, 5):
+        cols = st.columns(5)
+        for c_idx, col in enumerate(cols):
+            if idx + c_idx < len(top):
+                row = top.iloc[idx + c_idx]
+                with col:
+                    poster_url = fetch_poster(row['movieNm'], tmdb_key)
+                    # 순위 뱃지와 함께 이미지 출력
+                    st.image(poster_url, use_column_width=True)
+                    st.markdown(f"**{row['rank']}위.** {row['movieNm']}")
+                    st.caption(f"일일 관객: {int(row['audiCnt']):,}명")
+    
+    st.divider()
+    
+    # 데이터 테이블 섹션
+    st.markdown("#### 📊 상세 데이터 테이블")
     col_sort, _ = st.columns([1, 3])
     with col_sort:
         sort_options = {
@@ -271,10 +311,16 @@ with st.sidebar:
 st.title("🎬 KOBIS 박스오피스 인텔리전스")
 st.markdown("어제 하루 동안의 대한민국 영화관람 트렌드를 깊이 있게 분석해보세요.")
 
+# API 키 불러오기 (KOBIS 및 TMDB)
 try:
     api_key = st.secrets["KOBIS_KEY"].strip()
 except (KeyError, StreamlitSecretNotFoundError):
     api_key = ""
+
+try:
+    tmdb_key = st.secrets.get("TMDB_KEY", "").strip()
+except StreamlitSecretNotFoundError:
+    tmdb_key = ""
     
 if not api_key or api_key == "발급받은_API_키":
     st.error("🔒 KOBIS_KEY를 로컬 `.streamlit/secrets.toml` 또는 Streamlit Cloud Secrets에 등록해 주세요.")
@@ -289,7 +335,7 @@ try:
         tab1, tab2, tab3, tab4 = st.tabs(["🏆 전국 TOP 10", "📈 7일 관객 추이", "⚔️ 영화 비교", "🗺️ 지역 비교"])
         
         with tab1:
-            show_ranking(nationwide)
+            show_ranking(nationwide, tmdb_key)
         with tab2:
             show_history(day, nationwide, api_key)
         with tab3:
